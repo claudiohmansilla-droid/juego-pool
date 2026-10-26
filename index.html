@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<!-- versión 5 -->
+<!-- versión 6 -->
 <title>Pool Day - FPS</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Arial,sans-serif;color:#fff;
@@ -23,6 +23,11 @@
   #ammo{right:20px;bottom:20px;color:#ff6;text-align:right}
   #kills{right:20px;top:12px}
   #slots{left:50%;bottom:20px;transform:translateX(-50%);font-size:13px}
+  #enemies{right:20px;top:58px;font-size:15px;color:#ff8a7a}
+  #prompt{left:50%;top:calc(50% + 40px);transform:translateX(-50%);font-size:15px;display:none;color:#ffcc33;white-space:nowrap}
+  #scope{position:fixed;inset:0;display:none;pointer-events:none;background:radial-gradient(circle at center,transparent 0,transparent 34vh,#000 34.5vh)}
+  #scope .ring{position:absolute;left:50%;top:50%;width:68vh;height:68vh;transform:translate(-50%,-50%);border-radius:50%;border:3px solid #000;box-sizing:border-box;background:linear-gradient(#000,#000) center/100% 1px no-repeat,linear-gradient(#000,#000) center/1px 100% no-repeat}
+  body.is-touch #enemies{top:48px;font-size:13px}
   #msg{left:50%;top:62%;transform:translateX(-50%);font-size:16px;display:none;white-space:nowrap}
   #hit{position:fixed;inset:0;background:radial-gradient(transparent 40%,rgba(255,0,0,.6));opacity:0;transition:opacity .3s;pointer-events:none}
   .screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -47,6 +52,7 @@
   #bReload{right:calc(3vw + 120px);bottom:calc(5vh + 68px);width:54px;height:54px}
   #bUse{right:calc(3vw + 60px);bottom:calc(6vh + 125px);width:54px;height:54px}
   #bWeap{right:3vw;bottom:calc(6vh + 125px);width:54px;height:54px}
+  #bZoom{right:calc(3vw + 120px);bottom:calc(6vh + 130px);width:54px;height:54px}
   body.is-touch #slots{display:none}
   body.is-touch #health{left:50%;transform:translateX(-50%);bottom:auto;top:10px;font-size:15px}
   body.is-touch #ammo{top:10px;bottom:auto;right:auto;left:10px;text-align:left;font-size:15px}
@@ -67,7 +73,10 @@
   <div id="kills" class="box">Bajas: 0 | Muertes: 0</div>
   <div id="slots" class="box"></div>
   <div id="msg" class="box"></div>
+  <div id="enemies" class="box">Enemigos: 0/0</div>
+  <div id="prompt" class="box"></div>
 </div>
+<div id="scope"><div class="ring"></div></div>
 <div id="hit"></div>
 <button id="tToggle">CONTROLES TÁCTILES</button>
 <div id="touch">
@@ -77,6 +86,7 @@
   <div id="bReload" class="tbtn">RECARGAR</div>
   <div id="bUse" class="tbtn">AGARRAR</div>
   <div id="bWeap" class="tbtn">ARMA</div>
+  <div id="bZoom" class="tbtn">MIRA</div>
   <div id="rotate">Girá el celu en horizontal para jugar mejor</div>
 </div>
 
@@ -92,10 +102,16 @@
     <button class="opt diff sel" data-d="normal">Normal</button>
     <button class="opt diff" data-d="dificil">Difícil</button>
   </div>
-  <p id="helpTouch" style="display:none">Joystick: arriba/abajo caminás, izquierda/derecha girás la cámara.<br>La mira queda fija al centro: apuntás girando. La altura se ajusta sola hacia el enemigo.</p>
+  <p id="helpTouch" style="display:none">Joystick: arriba/abajo caminás, izquierda/derecha girás la cámara.<br>La mira queda fija al centro: apuntás girando. La altura se ajusta sola hacia el enemigo.<br>AGARRAR levanta el arma del piso · MIRA hace zoom con rifle o francotirador.</p>
   <p id="helpDesk">WASD moverse · Mouse apuntar · Click disparar · Espacio saltar · Shift caminar<br>
-  E agarrar · R recargar · 1-5 cambiar de arma · Click derecho: mira del francotirador<br>(Si el mouse no queda capturado, arrastrá con click para mirar)</p>
+  E agarrar · R recargar · 1-5 cambiar de arma · Click derecho: mira (rifle/francotirador)<br>(Si el mouse no queda capturado, arrastrá con click para mirar)</p>
   <button id="playBtn">¡Jugar!</button>
+</div>
+<div id="win" class="screen" style="display:none">
+  <h1 style="color:#6f6">¡Ganaste, che!</h1>
+  <p id="winStats"></p>
+  <button id="againBtn">Jugar de nuevo</button>
+  <button id="winMenuBtn" class="opt">Volver al menú</button>
 </div>
 <div id="dead" class="screen" style="display:none">
   <h1 style="color:#f44">¡Te mataron, che!</h1>
@@ -274,13 +290,16 @@ function buildWalls(){
 function buildHouse(cx, cz, w, d, doorSide){
   const h = 3.5, t = 0.3, door = 2.4, wm = M('wall',d,h,3), wm2 = M('wall',w,h,3);
   const back = doorSide > 0 ? -1 : 1;
-  addBox(cx+back*w/2,h/2,cz,t,h,d,wm);
   addBox(cx,h/2,cz-d/2,w,h,t,wm2); addBox(cx,h/2,cz+d/2,w,h,t,wm2);
-  const seg = (d-door)/2, fx = cx+doorSide*w/2;
-  addBox(fx,h/2,cz-d/2+seg/2,t,h,seg,wm); addBox(fx,h/2,cz+d/2-seg/2,t,h,seg,wm);
-  addBox(fx,h-0.4,cz,t,0.8,door,wm);
+  // Dos puertas: frente (hacia la piscina) y atrás (salida al pasillo trasero)
+  const seg = (d-door)/2;
+  for (const side of [doorSide, back]){
+    const fx = cx+side*w/2;
+    addBox(fx,h/2,cz-d/2+seg/2,t,h,seg,wm); addBox(fx,h/2,cz+d/2-seg/2,t,h,seg,wm);
+    addBox(fx,h-0.4,cz,t,0.8,door,wm);   // dintel (alto 2.7 libre)
+  }
   addBox(cx,h+0.15,cz,w+0.6,0.3,d+0.6,M('roof',w,d,2));
-  crate(cx-back*1.5, cz+d/2-1.5, 1.2);   // caja adentro
+  crate(cx-back*1.5, cz+d/2-1.5, 1.2);   // caja en un rincón (no tapa las puertas)   // caja adentro
 }
 
 /* ---------- Coberturas ---------- */
@@ -299,6 +318,22 @@ function barrel(x, z){
   colliders.push(new THREE.Box3().setFromObject(m));
 }
 
+// Torre: columna sólida de 3 m, escalera de 6 escalones (0,5 m c/u) y baranda en 3 lados.
+// stairDir = +1 la escalera baja hacia +X, -1 hacia -X.
+function tower(cx, cz, stairDir){
+  const H = 3, S = 4, conc = M('concrete',S,H,2), stepMat = M('concrete',1,1,1);
+  addBox(cx, H/2, cz, S, H, S, conc);
+  for (let i=1;i<=6;i++){                       // escalón i: altura H - (i-1)*0.5 ... baja alejándose
+    const h = H - i*0.5 + 0.5;
+    addBox(cx + stairDir*(S/2 + 0.4 + (i-1)*0.8), h/2, cz, 0.8, h, 1.6, stepMat);
+  }
+  const rail = M('crate',1,1,1), rh = 1.1, top = H + rh/2;
+  addBox(cx - stairDir*(S/2-0.1), top, cz, 0.2, rh, S, rail);           // baranda del fondo
+  addBox(cx, top, cz - S/2 + 0.1, S, rh, 0.2, rail);                    // laterales
+  addBox(cx, top, cz + S/2 - 0.1, S, rh, 0.2, rail);
+  addBox(cx + stairDir*(S/2-0.1), top, cz - 1.2, 0.2, rh, 1.4, rail);   // del lado escalera, deja hueco al medio
+  addBox(cx + stairDir*(S/2-0.1), top, cz + 1.2, 0.2, rh, 1.4, rail);
+}
 function buildCover(){
   // Pilares alrededor de la piscina (como una pérgola)
   [-10,10].forEach(x => [-11,-3.5,3.5,11].forEach(z => pillar(x,z)));
@@ -312,7 +347,9 @@ function buildCover(){
   tallWall(-18,-10,6,false); tallWall(18,10,6,false); tallWall(-18,10,6,false); tallWall(18,-10,6,false);
   tallWall(-4,-27,4); tallWall(4,27,4);
   // Barriles
-  [[-20,-15],[20,15],[-21,5],[21,-5],[15,-35],[-15,35]].forEach(([x,z]) => barrel(x,z));
+  [[-20,-15],[20,15],[-21,5],[21,-5],[16,-31],[-16,31]].forEach(([x,z]) => barrel(x,z));
+  // Torres para campear (con escalera)
+  tower(-24,0, 1); tower(24,0,-1); tower(18,-36,-1); tower(-18,36,1);
   // Reposeras (bajas, solo decorativas/colisión)
   [[-11.5,-7],[11.5,7]].forEach(([x,z]) => addBox(x,0.25,z,0.8,0.5,2,M('white',1,2,1)));
   // Palmeras
@@ -328,8 +365,9 @@ function buildCover(){
 function buildMap(){
   buildFloor(); buildPool(); buildWalls();
   const hw = ARENA_W/2;
-  buildHouse(-hw+5,-22,10,12, 1); buildHouse(-hw+5,22,10,12, 1);
-  buildHouse( hw-5,-22,10,12,-1); buildHouse( hw-5,22,10,12,-1);
+  // Casas separadas 2 m del muro perimetral: queda un pasillo trasero para escapar por la puerta de atrás
+  buildHouse(-hw+6.5,-22,9,12, 1); buildHouse(-hw+6.5,22,9,12, 1);
+  buildHouse( hw-6.5,-22,9,12,-1); buildHouse( hw-6.5,22,9,12,-1);
   buildCover();
 }
 buildMap();
@@ -414,6 +452,7 @@ function equip(type){
   viewModel.position.set(0.22,-0.22,-0.45);
   camera.add(viewModel);
   camera.fov = 75; camera.updateProjectionMatrix();
+  document.getElementById('scope').style.display = 'none';
   updateHUD();
 }
 function giveWeapon(type){
@@ -453,7 +492,7 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (!player.alive || !playing) return;
   if (e.code === 'KeyR') startReload();
-  if (e.code === 'KeyE') tryPickup(true);
+  if (e.code === 'KeyE') tryPickup();
   const n = parseInt(e.key); if (n>=1 && n<=5) equip(SLOT_ORDER[n-1]);
 });
 addEventListener('keyup', e => keys[e.code] = false);
@@ -461,14 +500,21 @@ addEventListener('mousedown', e => {
   if (!playing || e.target !== renderer.domElement || lastWasTouch) return;
   if (!locked) dragLook = true;
   if (e.button === 0) mouseDown = true;
-  if (e.button === 2 && player.current === 'sniper') toggleScope();
+  if (e.button === 2) toggleScope();
 });
 addEventListener('mouseup', e => { dragLook = false; if (e.button === 0) mouseDown = false; });
 addEventListener('contextmenu', e => e.preventDefault());
-function toggleScope(){ camera.fov = camera.fov === 75 ? 20 : 75; camera.updateProjectionMatrix(); }
+// Mira: rifle ~2x, francotirador ~4x (con visor). Se alterna.
+const ZOOM = { rifle:37, sniper:18 };
+function toggleScope(){
+  const z = ZOOM[player.current];
+  if (!z){ flashMsg('Esta arma no tiene mira'); return; }
+  camera.fov = camera.fov === 75 ? z : 75; camera.updateProjectionMatrix();
+  document.getElementById('scope').style.display = (camera.fov === ZOOM.sniper && player.current === 'sniper') ? 'block' : 'none';
+}
 
 function look(dx, dy, mult = 1){
-  const s = (camera.fov < 75 ? 0.0006 : 0.002) * mult;
+  const s = 0.002 * (camera.fov/75) * mult;   // más lento con zoom
   player.yaw -= dx * s;
   player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - dy * s));
 }
@@ -526,7 +572,8 @@ function holdBtn(id, down, up){
 holdBtn('bFire', () => mouseDown = true, () => mouseDown = false);
 holdBtn('bJump', () => keys.Space = true, () => keys.Space = false);
 holdBtn('bReload', () => startReload());
-holdBtn('bUse', () => { tryPickup(true); if (player.current === 'sniper') toggleScope(); });
+holdBtn('bUse', () => tryPickup());
+holdBtn('bZoom', () => toggleScope());
 holdBtn('bWeap', () => { const o = SLOT_ORDER.filter(t => player.inv[t]); equip(o[(o.indexOf(player.current)+1) % o.length]); });
 document.addEventListener('gesturestart', e => e.preventDefault());
 
@@ -592,7 +639,7 @@ function updatePlayer(dt){
   // joystick derecho: rotación continua (analógica, curva cuadrática para precisión)
   // MÓVIL (estilo arcade/tanque): X del joystick gira la cámara, Y camina adelante/atrás
   if (isTouch && touchMove.x){
-    const k = aimAssistFactor() * (camera.fov < 75 ? 0.3 : 1);
+    const k = aimAssistFactor() * (camera.fov/75);
     const ax = Math.abs(touchMove.x) < 0.12 ? 0 : touchMove.x;              // zona muerta
     player.yaw -= Math.sign(ax) * ax*ax * 2.8 * dt * k;                     // curva cuadrática: fino al centro
   }
@@ -609,7 +656,7 @@ function updatePlayer(dt){
   moveEntity(player, dt);
   playerHitbox.position.set(player.pos.x, player.pos.y+0.9, player.pos.z);
 
-  tryPickup(false);
+  updatePrompt();   // ya no se agarra automáticamente: solo con E / AGARRAR
   player.cooldown -= dt;
   if (player.reloading > 0){ player.reloading -= dt; if (player.reloading <= 0) finishReload(); }
   if (mouseDown){ shoot(); if (!WEAPONS[player.current].auto) mouseDown = false; }
@@ -630,14 +677,23 @@ function syncCamera(){
 }
 
 /* ---------- Pickups ---------- */
-function tryPickup(pressedE){
+function nearestPickup(){
+  let best = null, bd = 2.2;
   for (const p of pickups){
     if (!p.active) continue;
     const d = Math.hypot(p.mesh.position.x-player.pos.x, p.mesh.position.z-player.pos.z);
-    if (d < (pressedE ? 2.2 : 1.2) && Math.abs(p.mesh.position.y-player.pos.y) < 1.5){
-      giveWeapon(p.type); p.active = false; p.mesh.visible = false; p.respawn = 20; return;
-    }
+    if (d < bd && Math.abs(p.mesh.position.y-player.pos.y) < 1.5){ bd = d; best = p; }
   }
+  return best;
+}
+function updatePrompt(){
+  const p = nearestPickup(), el = document.getElementById('prompt');
+  if (p){ el.textContent = (isTouch ? 'AGARRAR: ' : '[E] AGARRAR: ') + WEAPONS[p.type].name; el.style.display = 'block'; }
+  else el.style.display = 'none';
+}
+function tryPickup(){
+  const p = nearestPickup();
+  if (p){ giveWeapon(p.type); p.active = false; p.mesh.visible = false; p.respawn = 20; }
 }
 function updatePickups(dt, t){
   for (const p of pickups){
@@ -751,6 +807,7 @@ function createBot(i){
 function setupBots(n){
   bots.forEach(b => scene.remove(b.mesh)); bots.length = 0;
   for (let i=0;i<n;i++) createBot(i);
+  updateHUD();
 }
 
 // Línea de visión: raycast real contra coberturas
@@ -762,7 +819,8 @@ function lineClear(from, to){
 
 function damageBot(bot, dmg){
   bot.health -= dmg; bot.target = null; bot.react = 0;
-  if (bot.health <= 0){ bot.alive = false; bot.mesh.visible = false; bot.respawn = 5; player.kills++; flashMsg('¡Baja!'); updateHUD(); }
+  if (bot.health <= 0){ bot.alive = false; bot.mesh.visible = false; player.kills++; flashMsg('¡Baja!'); updateHUD();
+    if (bots.every(b => !b.alive)) setTimeout(win, 600); }
 }
 
 // Disparo de bot: dirección con dispersión, raycast REAL contra coberturas + hitbox del jugador
@@ -786,8 +844,7 @@ function updateBots(dt){
   const eye = camera.position.clone(), diff = DIFFICULTY[settings.difficulty];
   for (const bot of bots){
     if (!bot.alive){
-      if ((bot.respawn -= dt) <= 0){ bot.alive = true; bot.health = 100; bot.cooldown = GRACE; bot.pos.copy(randomSpawn()); bot.mesh.visible = true; }
-      continue;
+      continue;   // sin reaparición: la cantidad elegida es el total de la partida
     }
     const botEye = bot.pos.clone(); botEye.y += 1.6;
     const dist = botEye.distanceTo(eye);
@@ -833,6 +890,15 @@ function damagePlayer(dmg){
   if (player.health <= 0) die();
   updateHUD();
 }
+let roundStart = performance.now();
+function win(){
+  if (!player.alive || !playing) return;
+  playing = false; mouseDown = false; started = false;
+  const t = Math.round((performance.now()-roundStart)/1000), mm = Math.floor(t/60), ss = String(t%60).padStart(2,'0');
+  document.getElementById('winStats').textContent = `Bajas: ${player.kills} · Tiempo: ${mm}:${ss} · Vida: ${player.health} · Dificultad: ${document.querySelector('.diff.sel').textContent}`;
+  document.getElementById('win').style.display = 'flex';
+  if (document.exitPointerLock) document.exitPointerLock();
+}
 function die(){
   player.alive = false; player.deaths++; playing = false; mouseDown = false;
   document.getElementById('deadStats').textContent = `Bajas: ${player.kills} · Muertes: ${player.deaths}`;
@@ -840,7 +906,7 @@ function die(){
   if (document.exitPointerLock) document.exitPointerLock();
 }
 function newRound(){
-  resetPlayer();
+  resetPlayer(); player.kills = 0; roundStart = performance.now();
   setupBots(settings.enemies);
   bulletGrace = GRACE; flashMsg(`¡Preparate! ${GRACE} segundos de gracia`);
 }
@@ -848,6 +914,7 @@ function startGame(e){
   if (e){ e.preventDefault(); e.stopPropagation(); }
   document.getElementById('start').style.display = 'none';
   document.getElementById('dead').style.display = 'none';
+  document.getElementById('win').style.display = 'none';
   if (!started || !player.alive || bots.length !== settings.enemies) { newRound(); started = true; }
   playing = true; tryLock();
   if (isTouch && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
@@ -858,6 +925,8 @@ const tap = (id, fn) => { const el = document.getElementById(id); el.addEventLis
 tap('playBtn', startGame);
 tap('restartBtn', e => { player.alive = false; startGame(e); });
 tap('menuBtn', () => { started = false; showMenu(); });
+tap('againBtn', e => { started = false; startGame(e); });
+tap('winMenuBtn', () => { started = false; document.getElementById('win').style.display = 'none'; showMenu(); });
 // Selector de enemigos y dificultad
 function setEnemies(n){ settings.enemies = Math.max(1, Math.min(15, n)); document.getElementById('enemyVal').textContent = settings.enemies; }
 tap('enMinus', e => { e.stopPropagation(); setEnemies(settings.enemies-1); });
@@ -878,6 +947,7 @@ function updateHUD(){
   if (!inv) return;
   $('ammo').innerHTML = w.name + '<br>' + (w.mag === Infinity ? '∞' : `${inv.mag} / ${inv.reserve}`) + (player.reloading > 0 ? ' (recargando)' : '');
   $('kills').textContent = `Bajas: ${player.kills} | Muertes: ${player.deaths}`;
+  $('enemies').textContent = `Enemigos: ${bots.filter(b => b.alive).length}/${bots.length}`;
   $('slots').innerHTML = SLOT_ORDER.map((t,i) => `<span style="opacity:${player.inv[t]?1:0.35};color:${t===player.current?'#ff6':'#fff'}">[${i+1}] ${WEAPONS[t].name}</span>`).join(' &nbsp; ');
 }
 let msgTimer;
@@ -887,7 +957,7 @@ function flashMsg(t){ const el = $('msg'); el.textContent = t; el.style.display 
    BUCLE PRINCIPAL
    ========================================================= */
 window.__game = { player, bots, camera, shootables, THREE, settings, touchAim, touchMove, playerHitbox, lineClear,
-  get playing(){ return playing; }, set grace(v){ bulletGrace = v; } };   // para depuración/tests
+  get playing(){ return playing; }, damageBot, pickups, toggleScope, equip, set grace(v){ bulletGrace = v; } };   // para depuración/tests
 resetPlayer(); setupBots(settings.enemies);
 const clock = new THREE.Clock();
 function loop(){
