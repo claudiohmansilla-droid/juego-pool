@@ -2,6 +2,8 @@
 <html lang="es-AR">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<!-- versión 3 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Pool Day - FPS</title>
 <style>
@@ -39,6 +41,7 @@
   body.is-touch #ammo{top:10px;bottom:auto;right:auto;left:10px;text-align:left;font-size:15px}
   body.is-touch #kills{font-size:14px;top:10px}
   #rotate{display:none}
+  #tToggle{position:fixed;left:50%;top:52px;transform:translateX(-50%);z-index:20;font-size:11px;padding:4px 10px;margin:0;background:rgba(0,0,0,.5);color:#fff;border:1px solid #fff;border-radius:4px}
   @media (orientation:portrait){ body.is-touch #rotate{display:block;position:fixed;top:45%;width:100%;text-align:center;color:#ff6;pointer-events:none} }
 </style>
 <script type="importmap">
@@ -55,6 +58,7 @@
   <div id="msg" class="box"></div>
 </div>
 <div id="hit"></div>
+<button id="tToggle">CONTROLES TÁCTILES</button>
 <div id="touch">
   <div id="joy"><div id="joyKnob"></div></div>
   <div id="bFire" class="tbtn">DISPARAR</div>
@@ -276,7 +280,7 @@ const player = {
 let viewModel = null;     // arma en primera persona
 
 function resetPlayer(){
-  player.pos.set(0, 0, -29); player.vel.set(0,0,0);   // delante de la caja de cobertura, mirando a la piscina
+  player.pos.set(0, 0, -22); player.vel.set(0,0,0);   // delante de la caja de cobertura, mirando a la piscina
   player.yaw = Math.PI; player.pitch = 0;   // mirando hacia la piscina (+Z)
   player.health = 100; player.alive = true;
   player.inv = { knife:{ mag:Infinity, reserve:Infinity } };
@@ -314,8 +318,23 @@ let playing = false;        // el juego corre aunque no haya pointer lock (celul
 let dragLook = false;       // fallback: arrastrar el mouse para mirar
 let bulletGrace = 0;        // segundos en que los bots no disparan (inicio / reinicio)
 const touchMove = { x:0, y:0 }; // vector del joystick virtual (-1..1)
-const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+// Detección táctil robusta (Android/Brave a veces no reporta pointer:coarse)
+let isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || matchMedia('(pointer: coarse)').matches || matchMedia('(any-pointer: coarse)').matches;
+function enableTouch(){
+  if (document.body.classList.contains('is-touch') && isTouch) return;
+  isTouch = true; document.body.classList.add('is-touch');
+  if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+  const ht = document.getElementById('helpTouch'), hd = document.getElementById('helpDesk');
+  if (ht){ ht.style.display = 'block'; hd.style.display = 'none'; document.getElementById('playBtn').textContent = '¡Tocá para jugar!'; }
+}
 if (isTouch) document.body.classList.add('is-touch');
+// Si aparece cualquier toque, activar controles táctiles al vuelo
+addEventListener('touchstart', e => { if (e.target.id !== 'tToggle') enableTouch(); }, { capture:true, passive:true });
+addEventListener('pointerdown', e => { if (e.pointerType === 'touch' && e.target.id !== 'tToggle') enableTouch(); }, { capture:true });
+document.getElementById('tToggle').addEventListener('click', e => {
+  e.stopPropagation();
+  if (document.body.classList.contains('is-touch')){ document.body.classList.remove('is-touch'); isTouch = false; } else enableTouch();
+});
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (!player.alive) return;
@@ -343,7 +362,9 @@ addEventListener('mousemove', e => {
   if (!playing || (!locked && !dragLook)) return;
   look(e.movementX || 0, e.movementY || 0);
 });
-let hadLock = false;
+let hadLock = false, lastWasTouch = false;
+addEventListener('pointerdown', e => { lastWasTouch = e.pointerType === 'touch'; }, true);
+addEventListener('touchstart', () => { lastWasTouch = true; }, { capture:true, passive:true });
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
   if (locked) hadLock = true;
@@ -351,7 +372,7 @@ document.addEventListener('pointerlockchange', () => {
   if (!locked && hadLock && player.alive && playing){ playing = false; hadLock = false; document.getElementById('start').style.display = 'flex'; }
 });
 function tryLock(){
-  if (isTouch) return;
+  if (isTouch || lastWasTouch) return;   // nunca pedir pointer lock en táctil
   try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch(e) {}
 }
 
@@ -542,7 +563,7 @@ function updateBots(dt){
   for (const bot of bots){
     if (!bot.alive){
       bot.respawn -= dt;
-      if (bot.respawn <= 0){ bot.alive = true; bot.cooldown = 5; bot.health = 100; bot.pos.copy(randomSpawn()); bot.mesh.visible = true; }
+      if (bot.respawn <= 0){ bot.alive = true; bot.cooldown = 8; bot.health = 100; bot.pos.copy(randomSpawn()); bot.mesh.visible = true; }
       continue;
     }
     const botEye = bot.pos.clone().add(new THREE.Vector3(0,1.6,0));
@@ -603,7 +624,7 @@ function restart(){
   document.getElementById('dead').style.display = 'none';
   resetPlayer();
   bots.forEach(b => { b.alive = true; b.health = 100; b.pos.copy(randomSpawn()); b.mesh.visible = true; b.target = null; b.cooldown = 1; });
-  bulletGrace = 5; flashMsg('¡Preparate! 5 segundos de gracia');
+  bulletGrace = 8; flashMsg('¡Preparate! 8 segundos de gracia');
   playing = true; tryLock();
 }
 document.getElementById('restartBtn').onclick = restart;
@@ -611,14 +632,14 @@ function startGame(e){
   if (e) e.preventDefault();
   document.getElementById('start').style.display = 'none';
   if (!player.alive) return restart();
-  if (bulletGrace <= 0 && player.kills === 0 && player.deaths === 0) { bulletGrace = 5; flashMsg('¡Preparate! 5 segundos de gracia'); }
+  if (bulletGrace <= 0 && player.kills === 0 && player.deaths === 0) { bulletGrace = 8; flashMsg('¡Preparate! 8 segundos de gracia'); }
   playing = true; tryLock();
   if (isTouch && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
 }
 document.getElementById('playBtn').addEventListener('click', startGame);
 document.getElementById('start').addEventListener('touchend', startGame);   // tocar en cualquier lado arranca
 document.getElementById('restartBtn').addEventListener('touchend', e => { e.preventDefault(); restart(); });
-if (isTouch){ document.getElementById('helpTouch').style.display = 'block'; document.getElementById('helpDesk').style.display = 'none'; document.getElementById('playBtn').textContent = '¡Tocá para jugar!'; }
+if (isTouch){ enableTouch(); document.getElementById('helpTouch').style.display = 'block'; document.getElementById('helpDesk').style.display = 'none'; document.getElementById('playBtn').textContent = '¡Tocá para jugar!'; }
 
 /* =========================================================
    CONTROLES TÁCTILES
@@ -691,7 +712,7 @@ function flashMsg(t){
 /* =========================================================
    BUCLE PRINCIPAL
    ========================================================= */
-window.__game = { player, bots };   // acceso para depuración/tests
+window.__game = { player, bots, camera, shootables, THREE };   // acceso para depuración/tests
 resetPlayer();
 const clock = new THREE.Clock();
 function loop(){
