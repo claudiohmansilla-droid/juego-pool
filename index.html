@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<!-- versión 4 -->
+<!-- versión 5 -->
 <title>Pool Day - FPS</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Arial,sans-serif;color:#fff;
@@ -39,15 +39,14 @@
   #touch{position:fixed;inset:0;display:none;pointer-events:none}
   body.is-touch #touch{display:block}
   .joy{position:absolute;bottom:5vh;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.4);pointer-events:auto}
-  #joyL{left:3vw} #joyR{right:calc(3vw + 110px)}
+  #joyL{left:3vw;width:150px;height:150px} #joyL .knob{left:50px;top:50px}
   .knob{position:absolute;left:40px;top:40px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.55);pointer-events:none}
   .tbtn{position:absolute;pointer-events:auto;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.6);color:#fff;border-radius:50%;font-weight:bold;font-size:11px;display:flex;align-items:center;justify-content:center;text-align:center}
-  #bFire{right:2vw;bottom:5vh;width:95px;height:95px;background:rgba(200,0,0,.55);font-size:13px}
-  #bFire2{left:calc(3vw + 145px);bottom:30vh;width:70px;height:70px;background:rgba(200,0,0,.45);font-size:10px}
-  #bJump{right:2vw;bottom:calc(5vh + 105px);width:62px;height:62px}
-  #bReload{right:calc(2vw + 70px);bottom:calc(5vh + 140px);width:58px;height:58px}
-  #bUse{right:calc(2vw + 140px);bottom:calc(5vh + 150px);width:58px;height:58px}
-  #bWeap{right:calc(2vw + 210px);bottom:calc(5vh + 150px);width:58px;height:58px}
+  #bFire{right:3vw;bottom:6vh;width:115px;height:115px;background:rgba(200,0,0,.55);font-size:13px}
+  #bJump{right:calc(3vw + 125px);bottom:5vh;width:58px;height:58px}
+  #bReload{right:calc(3vw + 120px);bottom:calc(5vh + 68px);width:54px;height:54px}
+  #bUse{right:calc(3vw + 60px);bottom:calc(6vh + 125px);width:54px;height:54px}
+  #bWeap{right:3vw;bottom:calc(6vh + 125px);width:54px;height:54px}
   body.is-touch #slots{display:none}
   body.is-touch #health{left:50%;transform:translateX(-50%);bottom:auto;top:10px;font-size:15px}
   body.is-touch #ammo{top:10px;bottom:auto;right:auto;left:10px;text-align:left;font-size:15px}
@@ -73,9 +72,7 @@
 <button id="tToggle">CONTROLES TÁCTILES</button>
 <div id="touch">
   <div id="joyL" class="joy"><div class="knob"></div></div>
-  <div id="joyR" class="joy"><div class="knob"></div></div>
   <div id="bFire" class="tbtn">DISPARAR</div>
-  <div id="bFire2" class="tbtn">DISPARAR</div>
   <div id="bJump" class="tbtn">SALTAR</div>
   <div id="bReload" class="tbtn">RECARGAR</div>
   <div id="bUse" class="tbtn">AGARRAR</div>
@@ -95,7 +92,7 @@
     <button class="opt diff sel" data-d="normal">Normal</button>
     <button class="opt diff" data-d="dificil">Difícil</button>
   </div>
-  <p id="helpTouch" style="display:none">Joystick izquierdo: moverte · Joystick derecho (o deslizar): apuntar con la cámara<br>La mira queda siempre al centro, como en el Counter.</p>
+  <p id="helpTouch" style="display:none">Joystick: arriba/abajo caminás, izquierda/derecha girás la cámara.<br>La mira queda fija al centro: apuntás girando. La altura se ajusta sola hacia el enemigo.</p>
   <p id="helpDesk">WASD moverse · Mouse apuntar · Click disparar · Espacio saltar · Shift caminar<br>
   E agarrar · R recargar · 1-5 cambiar de arma · Click derecho: mira del francotirador<br>(Si el mouse no queda capturado, arrastrá con click para mirar)</p>
   <button id="playBtn">¡Jugar!</button>
@@ -505,7 +502,6 @@ function makeJoystick(el, out){
   addEventListener('touchend', end); addEventListener('touchcancel', end);
 }
 makeJoystick(document.getElementById('joyL'), touchMove);
-makeJoystick(document.getElementById('joyR'), touchAim);
 
 // Deslizar sobre la pantalla también apunta
 let lookId = null, lookLast = null;
@@ -528,7 +524,6 @@ function holdBtn(id, down, up){
   el.addEventListener('touchend', e => { e.preventDefault(); if (up) up(); }, { passive:false });
 }
 holdBtn('bFire', () => mouseDown = true, () => mouseDown = false);
-holdBtn('bFire2', () => mouseDown = true, () => mouseDown = false);
 holdBtn('bJump', () => keys.Space = true, () => keys.Space = false);
 holdBtn('bReload', () => startReload());
 holdBtn('bUse', () => { tryPickup(true); if (player.current === 'sniper') toggleScope(); });
@@ -545,9 +540,25 @@ function aimAssistFactor(){
     if (!b.alive) continue;
     _v.copy(b.pos).y += 1.2; _v.sub(camera.position);
     const dist = _v.length(); _v.normalize();
-    if (dist < 60 && _v.dot(_d) > Math.cos(Math.max(0.04, 0.6/dist))) return 0.4;   // cerca de la mira: frena el giro
+    if (dist < 60 && _v.dot(_d) > Math.cos(Math.max(0.05, 0.8/dist))) return 0.3;   // cerca de la mira: frena el giro
   }
   return 1;
+}
+
+// Apuntado vertical automático (táctil): busca el enemigo visible más cercano a la mira en horizontal
+// y lleva el pitch suavemente hacia su pecho. Sin enemigo, vuelve a mirar al horizonte.
+function autoPitch(dt){
+  let best = null, bestAng = 0.35;   // ~20° de tolerancia horizontal
+  const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+  for (const b of bots){
+    if (!b.alive) continue;
+    const dx = b.pos.x - camera.position.x, dz = b.pos.z - camera.position.z, h = Math.hypot(dx,dz);
+    if (h < 1 || h > 70) continue;
+    const ang = Math.acos(Math.max(-1, Math.min(1, (dx*fx + dz*fz)/h)));
+    if (ang < bestAng){ _v.set(b.pos.x, b.pos.y+1.3, b.pos.z); if (lineClear(camera.position, _v)){ bestAng = ang; best = { h, dy:b.pos.y+1.3-camera.position.y }; } }
+  }
+  const target = best ? Math.atan2(best.dy, best.h) : 0;
+  player.pitch += (target - player.pitch) * Math.min(1, dt * (best ? 6 : 2));
 }
 
 /* =========================================================
@@ -579,16 +590,18 @@ function moveEntity(ent, dt){
 
 function updatePlayer(dt){
   // joystick derecho: rotación continua (analógica, curva cuadrática para precisión)
-  if (touchAim.x || touchAim.y){
+  // MÓVIL (estilo arcade/tanque): X del joystick gira la cámara, Y camina adelante/atrás
+  if (isTouch && touchMove.x){
     const k = aimAssistFactor() * (camera.fov < 75 ? 0.3 : 1);
-    player.yaw   -= Math.sign(touchAim.x) * touchAim.x*touchAim.x * 2.6 * dt * k;
-    player.pitch  = Math.max(-1.45, Math.min(1.45, player.pitch - Math.sign(touchAim.y) * touchAim.y*touchAim.y * 1.8 * dt * k));
+    const ax = Math.abs(touchMove.x) < 0.12 ? 0 : touchMove.x;              // zona muerta
+    player.yaw -= Math.sign(ax) * ax*ax * 2.8 * dt * k;                     // curva cuadrática: fino al centro
   }
+  if (isTouch) autoPitch(dt);
   document.getElementById('cross').classList.toggle('assist', isTouch && aimAssistFactor() < 1);
 
   const inWater = player.pos.y < -0.6;
   const speed = (keys.ShiftLeft ? SPEED*0.5 : SPEED) * (inWater ? 0.6 : 1);
-  const f = (keys.KeyW?1:0)-(keys.KeyS?1:0)-touchMove.y, r = (keys.KeyD?1:0)-(keys.KeyA?1:0)+touchMove.x;
+  const f = (keys.KeyW?1:0)-(keys.KeyS?1:0)-touchMove.y, r = (keys.KeyD?1:0)-(keys.KeyA?1:0);   // en táctil X gira, no desplaza
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const vx = -sin*f+cos*r, vz = -cos*f-sin*r, len = Math.max(1, Math.hypot(vx,vz));
   player.vel.x = vx/len*speed; player.vel.z = vz/len*speed;
