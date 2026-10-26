@@ -2,6 +2,7 @@
 <html lang="es-AR">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Pool Day - FPS</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Arial,sans-serif;color:#fff}
@@ -20,6 +21,25 @@
   .screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.75);text-align:center}
   .screen h1{font-size:48px;margin:0 0 10px}
   button{font-size:20px;padding:10px 30px;margin-top:20px;cursor:pointer}
+  html,body{touch-action:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+  canvas{touch-action:none}
+  /* ---- Controles táctiles ---- */
+  #touch{position:fixed;inset:0;display:none;pointer-events:none}
+  body.is-touch #touch{display:block}
+  #joy{position:absolute;left:3vw;bottom:5vh;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.4);pointer-events:auto}
+  #joyKnob{position:absolute;left:40px;top:40px;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.6)}
+  .tbtn{position:absolute;pointer-events:auto;background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.6);color:#fff;border-radius:50%;font-weight:bold;font-size:12px;display:flex;align-items:center;justify-content:center;text-align:center}
+  #bFire{right:4vw;bottom:8vh;width:90px;height:90px;background:rgba(200,0,0,.5);font-size:14px}
+  #bJump{right:calc(4vw + 100px);bottom:4vh;width:65px;height:65px}
+  #bReload{right:calc(4vw + 100px);bottom:calc(4vh + 75px);width:60px;height:60px}
+  #bUse{right:4vw;bottom:calc(8vh + 100px);width:60px;height:60px}
+  #bWeap{right:calc(4vw + 70px);bottom:calc(8vh + 140px);width:60px;height:60px}
+  body.is-touch #slots{display:none}
+  body.is-touch #health{left:50%;transform:translateX(-50%);bottom:auto;top:10px;font-size:15px}
+  body.is-touch #ammo{top:10px;bottom:auto;right:auto;left:10px;text-align:left;font-size:15px}
+  body.is-touch #kills{font-size:14px;top:10px}
+  #rotate{display:none}
+  @media (orientation:portrait){ body.is-touch #rotate{display:block;position:fixed;top:45%;width:100%;text-align:center;color:#ff6;pointer-events:none} }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -35,11 +55,21 @@
   <div id="msg" class="box"></div>
 </div>
 <div id="hit"></div>
+<div id="touch">
+  <div id="joy"><div id="joyKnob"></div></div>
+  <div id="bFire" class="tbtn">DISPARAR</div>
+  <div id="bJump" class="tbtn">SALTAR</div>
+  <div id="bReload" class="tbtn">RECARGAR</div>
+  <div id="bUse" class="tbtn">AGARRAR</div>
+  <div id="bWeap" class="tbtn">ARMA</div>
+  <div id="rotate">Girá el celu en horizontal para jugar mejor</div>
+</div>
 <div id="start" class="screen">
   <h1>POOL DAY</h1>
   <p>Agarrá las armas del piso y bajá a los terroristas.</p>
-  <p>WASD moverse · Mouse apuntar · Click disparar · Espacio saltar · Shift caminar<br>
-  E agarrar · R recargar · 1-5 cambiar de arma</p>
+  <p id="helpTouch" style="display:none">Joystick izquierdo para moverte · Deslizá a la derecha para mirar<br>Botones: DISPARAR, SALTAR, RECARGAR, AGARRAR, ARMA</p>
+  <p id="helpDesk">WASD moverse · Mouse apuntar · Click disparar · Espacio saltar · Shift caminar<br>
+  E agarrar · R recargar · 1-5 cambiar de arma<br>(Si el mouse no queda capturado, arrastrá con click para mirar)</p>
   <button id="playBtn">¡Jugar!</button>
 </div>
 <div id="dead" class="screen" style="display:none">
@@ -246,8 +276,9 @@ const player = {
 let viewModel = null;     // arma en primera persona
 
 function resetPlayer(){
-  player.pos.set(0, 0, -34); player.vel.set(0,0,0);
-  player.yaw = 0; player.pitch = 0; player.health = 100; player.alive = true;
+  player.pos.set(0, 0, -29); player.vel.set(0,0,0);   // delante de la caja de cobertura, mirando a la piscina
+  player.yaw = Math.PI; player.pitch = 0;   // mirando hacia la piscina (+Z)
+  player.health = 100; player.alive = true;
   player.inv = { knife:{ mag:Infinity, reserve:Infinity } };
   player.reloading = 0; player.cooldown = 0;
   equip('knife');
@@ -279,6 +310,12 @@ function giveWeapon(type){
 /* ---------- Input ---------- */
 const keys = {};
 let mouseDown = false, locked = false;
+let playing = false;        // el juego corre aunque no haya pointer lock (celular / navegador sin soporte)
+let dragLook = false;       // fallback: arrastrar el mouse para mirar
+let bulletGrace = 0;        // segundos en que los bots no disparan (inicio / reinicio)
+const touchMove = { x:0, y:0 }; // vector del joystick virtual (-1..1)
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (isTouch) document.body.classList.add('is-touch');
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (!player.alive) return;
@@ -288,24 +325,35 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => keys[e.code] = false);
 addEventListener('mousedown', e => {
-  if (!locked) return;
+  if (!playing || e.target !== renderer.domElement) return;
+  if (!locked) dragLook = true;     // sin pointer lock: arrastrar para mirar
   if (e.button === 0) mouseDown = true;
   if (e.button === 2 && player.current === 'sniper') {   // mira telescópica
     camera.fov = camera.fov === 75 ? 20 : 75; camera.updateProjectionMatrix();
   }
 });
-addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+addEventListener('mouseup', e => { dragLook = false; if (e.button === 0) mouseDown = false; });
 addEventListener('contextmenu', e => e.preventDefault());
+function look(dx, dy, mult = 1){
+  const s = (camera.fov < 75 ? 0.0006 : 0.002) * mult;
+  player.yaw -= dx * s;
+  player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch - dy * s));
+}
 addEventListener('mousemove', e => {
-  if (!locked) return;
-  const s = camera.fov < 75 ? 0.0006 : 0.002;
-  player.yaw -= e.movementX * s;
-  player.pitch = Math.max(-1.5, Math.min(1.5, player.pitch - e.movementY * s));
+  if (!playing || (!locked && !dragLook)) return;
+  look(e.movementX || 0, e.movementY || 0);
 });
+let hadLock = false;
 document.addEventListener('pointerlockchange', () => {
   locked = document.pointerLockElement === renderer.domElement;
-  if (!locked && player.alive) document.getElementById('start').style.display = 'flex';
+  if (locked) hadLock = true;
+  // Si teníamos el mouse capturado y el usuario apretó Esc: pausa
+  if (!locked && hadLock && player.alive && playing){ playing = false; hadLock = false; document.getElementById('start').style.display = 'flex'; }
 });
+function tryLock(){
+  if (isTouch) return;
+  try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch(e) {}
+}
 
 /* ---------- Física y colisiones ---------- */
 // Altura del piso bajo (x,z): 0 en la terraza, -depth en la piscina, o tope de escalón
@@ -335,16 +383,16 @@ function moveEntity(ent, dt){
   const g = groundHeight(ent.pos.x, ent.pos.z, ent.pos.y - ent.vel.y*dt);
   if (ent.pos.y <= g) { ent.pos.y = g; ent.vel.y = 0; ent.onGround = true; }
   else ent.onGround = false;
-  if (ent.pos.y < -20) ent.pos.set(0,0,-34); // red de seguridad
+  if (ent.pos.y < -20) ent.pos.set(0,0,-29); // red de seguridad
 }
 
 function updatePlayer(dt){
   const inWater = player.pos.y < -0.6;
   const speed = (keys.ShiftLeft ? SPEED*0.5 : SPEED) * (inWater ? 0.6 : 1);
-  const f = (keys.KeyW?1:0) - (keys.KeyS?1:0), r = (keys.KeyD?1:0) - (keys.KeyA?1:0);
+  const f = (keys.KeyW?1:0) - (keys.KeyS?1:0) - touchMove.y, r = (keys.KeyD?1:0) - (keys.KeyA?1:0) + touchMove.x;
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   let vx = -sin*f + cos*r, vz = -cos*f - sin*r;
-  const len = Math.hypot(vx,vz) || 1;
+  const len = Math.max(1, Math.hypot(vx,vz));   // el joystick permite velocidad parcial
   player.vel.x = vx/len*speed; player.vel.z = vz/len*speed;
   if (keys.Space && player.onGround) player.vel.y = JUMP_V;
   moveEntity(player, dt);
@@ -494,7 +542,7 @@ function updateBots(dt){
   for (const bot of bots){
     if (!bot.alive){
       bot.respawn -= dt;
-      if (bot.respawn <= 0){ bot.alive = true; bot.health = 100; bot.pos.copy(randomSpawn()); bot.mesh.visible = true; }
+      if (bot.respawn <= 0){ bot.alive = true; bot.cooldown = 5; bot.health = 100; bot.pos.copy(randomSpawn()); bot.mesh.visible = true; }
       continue;
     }
     const botEye = bot.pos.clone().add(new THREE.Vector3(0,1.6,0));
@@ -505,7 +553,7 @@ function updateBots(dt){
       // perseguir: ir hacia el jugador pero frenar a cierta distancia
       bot.target = player.pos.clone(); speed = dist > 8 ? 4 : 0;
       bot.cooldown -= dt;
-      if (bot.cooldown <= 0){
+      if (bot.cooldown <= 0 && bulletGrace <= 0){
         const w = WEAPONS[bot.weapon];
         bot.cooldown = w.rate * 3 + Math.random()*0.6;
         // probabilidad de acierto según distancia
@@ -549,19 +597,76 @@ function die(){
   player.alive = false; player.deaths++; mouseDown = false;
   document.getElementById('deadStats').textContent = `Bajas: ${player.kills} · Muertes: ${player.deaths}`;
   document.getElementById('dead').style.display = 'flex';
-  document.exitPointerLock();
+  playing = false; mouseDown = false; if (document.exitPointerLock) document.exitPointerLock();
 }
 function restart(){
   document.getElementById('dead').style.display = 'none';
   resetPlayer();
-  bots.forEach(b => { b.alive = true; b.health = 100; b.pos.copy(randomSpawn()); b.mesh.visible = true; b.target = null; });
-  renderer.domElement.requestPointerLock();
+  bots.forEach(b => { b.alive = true; b.health = 100; b.pos.copy(randomSpawn()); b.mesh.visible = true; b.target = null; b.cooldown = 1; });
+  bulletGrace = 5; flashMsg('¡Preparate! 5 segundos de gracia');
+  playing = true; tryLock();
 }
 document.getElementById('restartBtn').onclick = restart;
-document.getElementById('playBtn').onclick = () => {
+function startGame(e){
+  if (e) e.preventDefault();
   document.getElementById('start').style.display = 'none';
-  renderer.domElement.requestPointerLock();
-};
+  if (!player.alive) return restart();
+  if (bulletGrace <= 0 && player.kills === 0 && player.deaths === 0) { bulletGrace = 5; flashMsg('¡Preparate! 5 segundos de gracia'); }
+  playing = true; tryLock();
+  if (isTouch && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+}
+document.getElementById('playBtn').addEventListener('click', startGame);
+document.getElementById('start').addEventListener('touchend', startGame);   // tocar en cualquier lado arranca
+document.getElementById('restartBtn').addEventListener('touchend', e => { e.preventDefault(); restart(); });
+if (isTouch){ document.getElementById('helpTouch').style.display = 'block'; document.getElementById('helpDesk').style.display = 'none'; document.getElementById('playBtn').textContent = '¡Tocá para jugar!'; }
+
+/* =========================================================
+   CONTROLES TÁCTILES
+   ========================================================= */
+const joy = document.getElementById('joy'), knob = document.getElementById('joyKnob');
+let joyId = null, lookId = null, lookLast = null;
+function joyUpdate(t){
+  const r = joy.getBoundingClientRect(), cx = r.left + r.width/2, cy = r.top + r.height/2, max = r.width/2;
+  let dx = t.clientX - cx, dy = t.clientY - cy; const d = Math.hypot(dx,dy);
+  if (d > max){ dx *= max/d; dy *= max/d; }
+  touchMove.x = dx/max; touchMove.y = dy/max;
+  knob.style.transform = `translate(${dx}px,${dy}px)`;
+}
+joy.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; joyId = t.identifier; joyUpdate(t); }, { passive:false });
+// Mirar: arrastrar sobre el canvas (mitad derecha o cualquier zona libre)
+renderer.domElement.addEventListener('touchstart', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (lookId === null){ lookId = t.identifier; lookLast = { x:t.clientX, y:t.clientY }; }
+}, { passive:false });
+addEventListener('touchmove', e => {
+  if (playing) e.preventDefault();
+  for (const t of e.changedTouches){
+    if (t.identifier === joyId) joyUpdate(t);
+    if (t.identifier === lookId && playing){ look(t.clientX - lookLast.x, t.clientY - lookLast.y, 2.2); lookLast = { x:t.clientX, y:t.clientY }; }
+  }
+}, { passive:false });
+function touchEnd(e){
+  for (const t of e.changedTouches){
+    if (t.identifier === joyId){ joyId = null; touchMove.x = touchMove.y = 0; knob.style.transform = ''; }
+    if (t.identifier === lookId) lookId = null;
+  }
+}
+addEventListener('touchend', touchEnd); addEventListener('touchcancel', touchEnd);
+// Botones
+function holdBtn(id, down, up){
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); if (playing && player.alive) down(); }, { passive:false });
+  el.addEventListener('touchend', e => { e.preventDefault(); if (up) up(); }, { passive:false });
+}
+holdBtn('bFire', () => { mouseDown = true; }, () => { mouseDown = false; });
+holdBtn('bJump', () => { keys.Space = true; }, () => { keys.Space = false; });
+holdBtn('bReload', () => startReload());
+holdBtn('bUse', () => tryPickup(true));
+holdBtn('bWeap', () => {   // pasa a la siguiente arma que tengas
+  const owned = SLOT_ORDER.filter(t => player.inv[t]);
+  equip(owned[(owned.indexOf(player.current) + 1) % owned.length]);
+});
+document.addEventListener('gesturestart', e => e.preventDefault());   // sin zoom en iOS
 
 /* =========================================================
    HUD
@@ -586,12 +691,14 @@ function flashMsg(t){
 /* =========================================================
    BUCLE PRINCIPAL
    ========================================================= */
+window.__game = { player, bots };   // acceso para depuración/tests
 resetPlayer();
 const clock = new THREE.Clock();
 function loop(){
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
-  if (locked && player.alive){
+  if (bulletGrace > 0) bulletGrace -= dt;
+  if (playing && player.alive){
     updatePlayer(dt);
     updateBots(dt);
   } else {
